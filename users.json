@@ -1,0 +1,37 @@
+{
+    "johndoe": {
+        "fname": "John",
+        "lname": "Doe",
+        "password": "$bcrypt-sha256$v=2,t=2b,r=12$thWHjPWdlYA0CSvqwD/5.O$KtIHCLBoQTZ9LgKp/fgq6kG40ysWdc6"
+    },
+    "foo123": {
+        "fname": "Foo",
+        "lname": "Bar",
+        "password": "$bcrypt-sha256$v=2,t=2b,r=12$scugyub6kkso5enb4vObv.$YFMS851LGqhmck7GdS6dQUjQC9S25Ae"
+    },
+    "foo#$!": {
+        "fname": "Foo",
+        "lname": "Bar",
+        "password": "$bcrypt-sha256$v=2,t=2b,r=12$vcfk5jXI0yctf2B12spqLO$GZbSGnEKWIJyCPI.jqbudE5O1GBst4q"
+    },
+    "someusernamexyz": {
+        "fname": "Foo",
+        "lname": "Bar",
+        "password": "$bcrypt-sha256$v=2,t=2b,r=12$ZAkCb5itcdHV5YKpP4pNF.$imkfVINqxVLByNoOpJBqbyoYzTwZy3m"
+    },
+    "somerandomusername": {
+        "fname": "Foo1",
+        "lname": "Bar2",
+        "password": "$bcrypt-sha256$v=2,t=2b,r=12$mdXTRTv0i0z5T40poPVMHu$b39oNnbMzbF7eqSx0KUnKL6hbqveyEe"
+    },
+    "test": {
+        "fname": "somename",
+        "lname": "somename",
+        "password": "$bcrypt-sha256$v=2,t=2b,r=12$7.NckPELAK.wW4qgUw1cKe$ajl82a/6d03NAlNMjZsKQ.6HJ17PQi2"
+    },
+    "ignosisscripttest": {
+        "fname": "Foo",
+        "lname": "Bar",
+        "password": "$bcrypt-sha256$v=2,t=2b,r=12$RoYAjjBjJ8OzA1Le4LyQTe$NXju8AcvNocYHg8ZrQ8jcBrj8o3ZjlC"
+    }
+}
