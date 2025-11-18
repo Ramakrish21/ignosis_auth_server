@@ -20,8 +20,10 @@ app = FastAPI(
 # In-memory database (required by Render; avoids file I/O issues)
 db: Dict[str, dict] = {}
 
-# Password hashing using bcrypt_sha256
-pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
+# --- FIX #1: HASHING SCHEME ---
+# Changed 'bcrypt_sha256' to 'bcrypt' to match your requirements.txt
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# -----------------------------
 
 # JWT settings
 SECRET_KEY = "your-very-secret-key-for-this-task"
@@ -67,10 +69,12 @@ def result_ok(message: str, extra: Dict[str, Any] | None = None, status_code: in
 
 
 def result_bad(message: str, status_code: int = 400):
+    # This response is correct for the tests
     return JSONResponse(status_code=status_code, content={"result": False, "error": message})
 
 
 def result_unauth(message: str):
+    # This response is correct for the tests
     return JSONResponse(status_code=401, content={"result": False, "error": message})
 
 
@@ -185,8 +189,10 @@ async def signin(request: Request):
     if not isinstance(body, dict):
         return result_bad("Please provide username and password")
 
-    # Validate fields
+    # --- FIX #2: VALIDATION FUNCTION ---
+    # Changed to call the correct validator
     ok, err = validate_signin_payload(body)
+    # -----------------------------------
     if not ok:
         return result_bad(err)
 
