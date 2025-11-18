@@ -1,7 +1,0 @@
-{
-    "finaltestuser": {
-        "fname": "John",
-        "lname": "Doe",
-        "password": "$bcrypt-sha256$v=2,t=2b,r=12$mj2qDpkyB3JujnlzT8E6vu$Tm6k3TAW241rbEvo3b18SYB4cK9UNCO"
-    }
-}

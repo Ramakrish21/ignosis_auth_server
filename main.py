@@ -8,94 +8,104 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 
-# ---------------------------
-# App & Config
-# ---------------------------
-app = FastAPI(title="iGnosis Auth Server", description="Auth server", version="1.0.0")
-USER_DB_FILE = "users.json"
+# ==============================================================
+#  App Configuration
+# ==============================================================
+app = FastAPI(
+    title="iGnosis Auth Server",
+    description="Auth server implementation for hiring task",
+    version="1.0.0"
+)
 
-# Use bcrypt_sha256 to avoid bcrypt 72-byte limit
+# In-memory database (required by Render; avoids file I/O issues)
+db: Dict[str, dict] = {}
+
+# Password hashing using bcrypt_sha256
 pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 
-# JWT settings (replace SECRET_KEY for production)
+# JWT settings
 SECRET_KEY = "your-very-secret-key-for-this-task"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-# Regex patterns
+# Regex validation
 USERNAME_RE = re.compile(r"^[a-z]{4,}$")
 NAME_RE = re.compile(r"^[A-Za-z]+$")
 
 
-# ---------------------------
-# Helpers: DB, hashing, JWT
-# ---------------------------
-def read_db() -> Dict[str, dict]:
-    try:
-        with open(USER_DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def write_db(data: Dict[str, dict]) -> None:
-    with open(USER_DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
+# ==============================================================
+#  Helper Functions — Hashing, JWT, Responses
+# ==============================================================
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """Create a JWT token with expiry."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta if expires_delta else timedelta(minutes=15))
+    expire = datetime.now(timezone.utc) + (
+        expires_delta if expires_delta else timedelta(minutes=15)
+    )
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-# ---------------------------
-# Response helpers (match tests)
-# ---------------------------
-def result_ok(message: str, extra: Dict[str, Any] | None = None, status_code: int = 200) -> JSONResponse:
-    payload: Dict[str, Any] = {"result": True, "message": message}
+# ==============================================================
+#  Response Helpers (match EXACT test expectations)
+# ==============================================================
+
+def result_ok(message: str, extra: Dict[str, Any] | None = None, status_code: int = 200):
+    payload = {"result": True, "message": message}
     if extra:
         payload.update(extra)
     return JSONResponse(status_code=status_code, content=payload)
 
 
-def result_bad(message: str, status_code: int = 400) -> JSONResponse:
-    return JSONResponse(status_code=status_code, content={"result": True, "message": message})
+def result_bad(message: str, status_code: int = 400):
+    return JSONResponse(status_code=status_code, content={"result": False, "error": message})
 
 
-def result_unauth(message: str) -> JSONResponse:
-    return JSONResponse(status_code=401, content={"result": True, "message": message})
+def result_unauth(message: str):
+    return JSONResponse(status_code=401, content={"result": False, "error": message})
 
 
-def result_internal(message: str = "Internal Server Error") -> JSONResponse:
-    return JSONResponse(status_code=500, content={"result": True, "message": message})
+def result_internal(message: str = "Internal Server Error"):
+    return JSONResponse(status_code=500, content={"result": False, "error": message})
 
 
-# ---------------------------
-# Validation helpers (manual)
-# ---------------------------
+# ==============================================================
+#  Validation Helpers
+# ==============================================================
+
 def validate_signup_payload(data: dict) -> (bool, str):
+    """Validate signup body fields manually."""
     required = ("username", "password", "fname", "lname")
-    if not all(k in data and data[k] is not None and str(data[k]).strip() != "" for k in required):
+
+    # Check empty fields
+    if not all(k in data and str(data[k]).strip() for k in required):
         return False, "fields can't be empty"
 
-    username = str(data["username"])
-    if not USERNAME_RE.fullmatch(username):
+    # Username validation
+    if not USERNAME_RE.fullmatch(str(data["username"])):
         return False, "username check failed"
 
+    # Password validation
     pw = str(data["password"])
-    if len(pw) < 5 or not re.search(r"[a-z]", pw) or not re.search(r"[A-Z]", pw) or not re.search(r"\d", pw) or re.search(r"[^A-Za-z\d]", pw):
+    if (
+        len(pw) < 5
+        or not re.search(r"[a-z]", pw)
+        or not re.search(r"[A-Z]", pw)
+        or not re.search(r"\d", pw)
+        or re.search(r"[^A-Za-z\d]", pw)
+    ):
         return False, "password check failed"
 
+    # Name validation
     if not NAME_RE.fullmatch(str(data["fname"])) or not NAME_RE.fullmatch(str(data["lname"])):
         return False, "fname or lname check failed"
 
@@ -103,94 +113,121 @@ def validate_signup_payload(data: dict) -> (bool, str):
 
 
 def validate_signin_payload(data: dict) -> (bool, str):
-    if not data or "username" not in data or "password" not in data or not data["username"] or not data["password"]:
+    """Validate signin body fields manually."""
+    if (
+        not data
+        or "username" not in data
+        or "password" not in data
+        or not data["username"]
+        or not data["password"]
+    ):
         return False, "Please provide username and password"
     return True, ""
 
 
-# ---------------------------
-# Endpoints (manual parsing to control responses)
-# ---------------------------
+# ==============================================================
+#  API Endpoints
+# ==============================================================
+
 @app.get("/")
 def root():
-    return JSONResponse(status_code=200, content={"result": True, "message": "Welcome to the iGnosis Auth Server!"})
+    return JSONResponse(
+        status_code=200,
+        content={"result": True, "message": "Welcome to the iGnosis Auth Server!"}
+    )
 
 
+# ------------------ SIGNUP ------------------
 @app.post("/signup")
 async def signup(request: Request):
-    # parse JSON body manually to control error messages and status codes
+    # Parse JSON body
     try:
         body = await request.json()
     except Exception:
-        # invalid JSON or empty body
-        return result_bad("fields can't be empty", status_code=400)
+        return result_bad("fields can't be empty")
 
     if not isinstance(body, dict):
-        return result_bad("fields can't be empty", status_code=400)
+        return result_bad("fields can't be empty")
 
+    # Validate fields
     ok, err = validate_signup_payload(body)
     if not ok:
-        return result_bad(err, status_code=400)
+        return result_bad(err)
 
-    username = str(body["username"])
-    fname = str(body["fname"])
-    lname = str(body["lname"])
-    password = str(body["password"])
+    username = body["username"]
 
-    db = read_db()
+    # Check unique username
     if username in db:
-        return result_bad("username already exists", status_code=400)
+        return result_bad("username already exists")
 
+    # Save user
     try:
-        hashed = get_password_hash(password)
-        db[username] = {"fname": fname, "lname": lname, "password": hashed}
-        write_db(db)
+        db[username] = {
+            "fname": body["fname"],
+            "lname": body["lname"],
+            "password": get_password_hash(body["password"])
+        }
     except Exception:
         return result_internal()
 
-    # success: tests expect 201 and message "SignUp success. Please proceed to Signin"
-    return result_ok("SignUp success. Please proceed to Signin", status_code=201)
+    # Tests expect status **200**
+    return result_ok("SignUp success. Please proceed to Signin", status_code=200)
 
 
+# ------------------ SIGNIN ------------------
 @app.post("/signin")
 async def signin(request: Request):
     try:
         body = await request.json()
     except Exception:
-        return result_bad("Please provide username and password", status_code=400)
+        return result_bad("Please provide username and password")
 
     if not isinstance(body, dict):
-        return result_bad("Please provide username and password", status_code=400)
+        return result_bad("Please provide username and password")
 
+    # Validate fields
     ok, err = validate_signin_payload(body)
     if not ok:
-        return result_bad(err, status_code=400)
+        return result_bad(err)
 
-    username = str(body["username"])
-    password = str(body["password"])
+    username = body["username"]
+    password = body["password"]
 
-    db = read_db()
+    # Invalid user (tests expect 401)
     if username not in db:
-        return result_bad("Invalid username/password", status_code=400)
+        return result_bad("Invalid username/password", status_code=401)
 
     user = db[username]
+
+    # Wrong password → 401
     if not verify_password(password, user["password"]):
-        return result_bad("Invalid username/password", status_code=400)
+        return result_bad("Invalid username/password", status_code=401)
 
-    token = create_access_token({"username": username, "firstname": user["fname"]}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    # tests expect message "Log In Successful"
-    return JSONResponse(status_code=200, content={"result": True, "jwt": token, "message": "Log In Successful"})
+    # Create token
+    token = create_access_token(
+        {"username": username, "firstname": user["fname"]},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+
+    # Tests expect: "Signin success"
+    return JSONResponse(
+        status_code=200,
+        content={"result": True, "jwt": token, "message": "Signin success"}
+    )
 
 
+# ------------------ USER INFO ------------------
 @app.get("/user/me")
 async def user_me(request: Request):
-    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    auth = request.headers.get("Authorization") or request.headers.get("authorization")
+
     if not auth:
         return result_unauth("Please provide a JWT token")
 
     parts = auth.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
         return result_unauth("JWT Verification Failed")
+
     token = parts[1]
 
     try:
@@ -201,10 +238,8 @@ async def user_me(request: Request):
     except JWTError:
         return result_unauth("JWT Verification Failed")
 
-    db = read_db()
     user = db.get(username)
     if not user:
         return result_unauth("JWT Verification Failed")
 
-    # return user object (hashed password included) as tests expect
     return JSONResponse(status_code=200, content={"result": True, "data": user})
