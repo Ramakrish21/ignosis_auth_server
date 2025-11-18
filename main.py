@@ -17,11 +17,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# In-memory database (required by Render; avoids file I/O issues)
-db: Dict[str, dict] = {}
+# --- USING JSON FILE INSTEAD OF IN-MEMORY DB ---
+USER_DB_FILE = "users.json"
+# -----------------------------------------------
 
-# Password hashing using bcrypt_sha256
-pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
+# Use 'bcrypt' to match your requirements.txt
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT settings
 SECRET_KEY = "your-very-secret-key-for-this-task"
@@ -37,16 +38,34 @@ NAME_RE = re.compile(r"^[A-Za-z]+$")
 #  Helper Functions — Hashing, JWT, Responses
 # ==============================================================
 
+# --- ADDED DB FUNCTIONS BACK IN ---
+def read_db() -> Dict[str, dict]:
+    """Reads the user database from the JSON file."""
+    try:
+        with open(USER_DB_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # If file is empty or missing, return empty dict
+        return {}
+
+def write_db(data: Dict[str, dict]) -> None:
+    """Writes the user database to the JSON file."""
+    with open(USER_DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+# ----------------------------------
+
 def get_password_hash(password: str) -> str:
+    """Hashes a plain-text password."""
     return pwd_context.hash(password)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Verifies a plain-text password against a hash."""
     return pwd_context.verify(plain, hashed)
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    """Create a JWT token with expiry."""
+    """Creates a new JWT access token."""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (
         expires_delta if expires_delta else timedelta(minutes=15)
@@ -56,10 +75,12 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
 
 # ==============================================================
-#  Response Helpers (match EXACT test expectations)
+#  Custom Response Helpers
+# (Formatted to pass the exact Postman test requirements)
 # ==============================================================
 
 def result_ok(message: str, extra: Dict[str, Any] | None = None, status_code: int = 200):
+    """Returns a standard JSON success response."""
     payload = {"result": True, "message": message}
     if extra:
         payload.update(extra)
@@ -67,34 +88,34 @@ def result_ok(message: str, extra: Dict[str, Any] | None = None, status_code: in
 
 
 def result_bad(message: str, status_code: int = 400):
+    """Returns a 400 Bad Request error, formatted as tests expect."""
     return JSONResponse(status_code=status_code, content={"result": False, "error": message})
 
 
 def result_unauth(message: str):
+    """Returns a 401 Unauthorized error, formatted as tests expect."""
     return JSONResponse(status_code=401, content={"result": False, "error": message})
 
 
 def result_internal(message: str = "Internal Server Error"):
+    """Returns a 500 Internal Server Error, formatted as tests expect."""
     return JSONResponse(status_code=500, content={"result": False, "error": message})
 
 
 # ==============================================================
-#  Validation Helpers
+#  Manual Validation Helpers
 # ==============================================================
 
 def validate_signup_payload(data: dict) -> (bool, str):
-    """Validate signup body fields manually."""
+    """Validate the entire signup JSON body."""
     required = ("username", "password", "fname", "lname")
 
-    # Check empty fields
     if not all(k in data and str(data[k]).strip() for k in required):
         return False, "fields can't be empty"
 
-    # Username validation
     if not USERNAME_RE.fullmatch(str(data["username"])):
         return False, "username check failed"
 
-    # Password validation
     pw = str(data["password"])
     if (
         len(pw) < 5
@@ -105,7 +126,6 @@ def validate_signup_payload(data: dict) -> (bool, str):
     ):
         return False, "password check failed"
 
-    # Name validation
     if not NAME_RE.fullmatch(str(data["fname"])) or not NAME_RE.fullmatch(str(data["lname"])):
         return False, "fname or lname check failed"
 
@@ -113,7 +133,7 @@ def validate_signup_payload(data: dict) -> (bool, str):
 
 
 def validate_signin_payload(data: dict) -> (bool, str):
-    """Validate signin body fields manually."""
+    """Validate the entire signin JSON body."""
     if (
         not data
         or "username" not in data
@@ -131,6 +151,7 @@ def validate_signin_payload(data: dict) -> (bool, str):
 
 @app.get("/")
 def root():
+    """Root endpoint to confirm the server is running."""
     return JSONResponse(
         status_code=200,
         content={"result": True, "message": "Welcome to the iGnosis Auth Server!"}
@@ -140,7 +161,7 @@ def root():
 # ------------------ SIGNUP ------------------
 @app.post("/signup")
 async def signup(request: Request):
-    # Parse JSON body
+    """Handles new user registration."""
     try:
         body = await request.json()
     except Exception:
@@ -149,34 +170,36 @@ async def signup(request: Request):
     if not isinstance(body, dict):
         return result_bad("fields can't be empty")
 
-    # Validate fields
     ok, err = validate_signup_payload(body)
     if not ok:
         return result_bad(err)
 
     username = body["username"]
-
-    # Check unique username
+    
+    # --- USING FILE DB ---
+    db = read_db()
+    
     if username in db:
         return result_bad("username already exists")
 
-    # Save user
     try:
         db[username] = {
             "fname": body["fname"],
             "lname": body["lname"],
             "password": get_password_hash(body["password"])
         }
+        # --- SAVING TO FILE ---
+        write_db(db)
     except Exception:
         return result_internal()
 
-    # Tests expect status **200**
     return result_ok("SignUp success. Please proceed to Signin", status_code=200)
 
 
 # ------------------ SIGNIN ------------------
 @app.post("/signin")
 async def signin(request: Request):
+    """Handles user login and returns a JWT."""
     try:
         body = await request.json()
     except Exception:
@@ -185,7 +208,6 @@ async def signin(request: Request):
     if not isinstance(body, dict):
         return result_bad("Please provide username and password")
 
-    # Validate fields
     ok, err = validate_signin_payload(body)
     if not ok:
         return result_bad(err)
@@ -193,23 +215,22 @@ async def signin(request: Request):
     username = body["username"]
     password = body["password"]
 
-    # Invalid user (tests expect 401)
+    # --- USING FILE DB ---
+    db = read_db()
+    
     if username not in db:
         return result_bad("Invalid username/password", status_code=401)
 
     user = db[username]
 
-    # Wrong password → 401
     if not verify_password(password, user["password"]):
         return result_bad("Invalid username/password", status_code=401)
 
-    # Create token
     token = create_access_token(
         {"username": username, "firstname": user["fname"]},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
 
-    # Tests expect: "Signin success"
     return JSONResponse(
         status_code=200,
         content={"result": True, "jwt": token, "message": "Signin success"}
@@ -219,6 +240,7 @@ async def signin(request: Request):
 # ------------------ USER INFO ------------------
 @app.get("/user/me")
 async def user_me(request: Request):
+    """Returns the current user's details from their JWT."""
     auth = request.headers.get("Authorization") or request.headers.get("authorization")
 
     if not auth:
@@ -238,6 +260,9 @@ async def user_me(request: Request):
     except JWTError:
         return result_unauth("JWT Verification Failed")
 
+    # --- USING FILE DB ---
+    db = read_db()
+    
     user = db.get(username)
     if not user:
         return result_unauth("JWT Verification Failed")
